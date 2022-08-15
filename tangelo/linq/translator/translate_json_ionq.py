@@ -34,6 +34,10 @@ def get_ionq_gates():
     GATE_JSON_IONQ = dict()
     for name in {"H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CNOT", "PHASE"}:
         GATE_JSON_IONQ[name] = name.lower()
+    for name in {"CRX", "CRY", "CRZ"}:
+        GATE_JSON_IONQ[name] = name[1:].lower()
+    for name in {"PHASE"}:
+        GATE_JSON_IONQ = "z"
     return GATE_JSON_IONQ
 
 
@@ -58,17 +62,10 @@ def translate_json_ionq(source_circuit):
             json_gates.append({'gate': GATE_JSON_IONQ[gate.name], 'target': gate.target[0]})
         elif gate.name in {"RX", "RY", "RZ"}:
             json_gates.append({'gate': GATE_JSON_IONQ[gate.name], 'target': gate.target[0], 'rotation': gate.parameter})
+        elif gate.name in {"CRX", "CRY", "CRZ"}:
+            json_gates.append({'gate': GATE_JSON_IONQ[gate.name], 'target': gate.target[0], 'controls': gate.control[0], 'rotation': gate.parameter})
         elif gate.name in {"PHASE"}:
-            if isclose(gate.parameter, pi / 2, abs_tol=1.e-7):
-                json_gates.append({'gate': 's', 'target': gate.target[0]})
-            elif isclose(gate.parameter, - pi / 2, abs_tol=1.e-7):
-                json_gates.append({'gate': 'si', 'target': gate.target[0]})
-            elif isclose(gate.parameter, pi / 4, abs_tol=1.e-7):
-                json_gates.append({'gate': 't', 'target': gate.target[0]})
-            elif isclose(gate.parameter, - pi / 4, abs_tol=1.e-7):
-                json_gates.append({'gate': 'ti', 'target': gate.target[0]})
-            else:
-                raise ValueError(f"Only phases of pi/2, -pi/2, pi/4, -pi/4 are supported with JSON IonQ translation")
+            json_gates.append({'gate': 'z', 'target': gate.target[0], 'rotation': gate.parameter})
         elif gate.name in {"CNOT"}:
             json_gates.append({'gate': GATE_JSON_IONQ[gate.name], 'target': gate.target[0], 'control': gate.control[0]})
         else:
