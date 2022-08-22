@@ -139,6 +139,114 @@ def get_idxs_deriv(qham_term, *qham_qmf_data):
     return idxs_deriv
 
 
+def construct_dis_jkmn(qubit_ham, pure_var_params, deqcc_dtau_thresh):
+    """ Construct the direct interaction set (DIS) of QCC generators as follows:
+    1. Identify the flip indices of all Hamiltonian terms and group terms by flip indices.
+    2. Construct a representative generator using flip indices from each candidate DIS group
+       and evaluate dEQCC/dtau for all Hamiltonian terms.
+    3. For each candidate DIS group, sum dEQCC/dtau for all Hamiltonian terms.
+       If |dEQCC/dtau| >= thresh add the candidate DIS group to the DIS.
+    4. For all DIS groups, create a complete set of generators made from Pauli X and and an
+       odd number of Y operators.
+
+    Args:
+        qubit_ham (QubitOperator): A qubit Hamiltonian.
+        pure_var_params (numpy array of float): A purified QMF variational parameter set.
+        deqcc_dtau_thresh (float): Threshold for |dEQCC/dtau| so that a candidate group is added
+            to the DIS if |dEQCC/dtau| >= deqcc_dtau_thresh for a generator.
+
+    Returns:
+        list of list: the DIS of QCC generators.
+    """
+
+    # Use a qubit Hamiltonian and purified QMF parameter set to construct the DIS
+    dis, dis_groups = [], get_dis_groups_jkmn(qubit_ham, pure_var_params, deqcc_dtau_thresh)
+    if dis_groups:
+        flip_inds = set()
+        for dis_group in dis_groups:
+            # for now just grab the first generator; eventually add capability to
+            # allow the user to select which generators to use.
+            c_inds = ""
+            for q, pauli in dis_group[0]:
+                c_inds += str(q)
+            if c_inds not in flip_inds:
+                flip_inds.add(c_inds)
+                dis.append(QubitOperator(dis_group[0]))
+    else:
+        raise ValueError(f"The DIS is empty: there are no candidate DIS groups where "
+                         f"|dEQCC/dtau| >= {deqcc_dtau_thresh} a.u. Terminate simulation.\n")
+    return dis
+
+
+def get_dis_groups_jkmn(qubit_ham, pure_var_params, deqcc_dtau_thresh):
+    """Construct unique DIS groups characterized by the flip indices and |dEQCC/dtau|.
+
+    Args:
+        qubit_ham (QubitOperator): A qubit Hamiltonian.
+        pure_var_params (numpy array of float): A purified QMF variational parameter set.
+        deqcc_dtau_thresh (float): Threshold for |dEQCC/dtau| so that a candidate group is added
+            to the DIS if |dEQCC/dtau| >= deqcc_dtau_thresh for a generator.
+
+    Returns:
+        list of tuple: the DIS group flip indices (str) and signed value of dEQCC/dtau (float).
+    """
+
+    # Get the flip indices from qubit_ham and compute the gradient dEQCC/dtau
+    qham_gen = ((qham_items[0], (qham_items[1], pure_var_params))
+                 for qham_items in qubit_ham.terms.items())
+    flip_idxs = list(filter(None, (get_idxs_deriv_jkmn(q_gen[0], *q_gen[1]) for q_gen in qham_gen)))
+
+    # Group Hamiltonian terms with the same flip indices and sum of the signed dEQCC/tau values
+    candidates = dict()
+    for idxs in flip_idxs:
+        deriv_old = candidates.get(idxs[0], 0.)
+        candidates[idxs[0]] = idxs[1] + deriv_old
+
+    # Return a sorted list of flip indices and signed dEQCC/dtau values for each DIS group
+    dis_groups = [idxs_deriv for idxs_deriv in candidates.items()
+                  if abs(idxs_deriv[1]) >= deqcc_dtau_thresh]
+    return sorted(dis_groups, key=lambda deriv: abs(deriv[1]), reverse=True)
+
+
+def get_idxs_deriv_jkmn(qham_term, *qham_qmf_data):
+    """Find the flip indices of a qubit Hamiltonian term by identifying the indices
+    of any X and Y operators that are present. A representative generator is then
+    built with a Pauli Y operator acting on the first flip index and then Pauli X
+    operators acting on the remaining flip indices. Then dEQCC/dtau is evaluated as
+    dEQCC_dtau = -i/2 <QMF|[H, gen]|QMF> = -i <QMF|H * gen|QMF>.
+
+    Args:
+        qham_term (tuple of tuple): The Pauli operators and indices of a QubitOperator term.
+        qham_qmf_data (tuple): The coefficient of a QubitOperator term and a purified QMF
+            variational parameter set (numpy array of float).
+
+    Returns:
+        tuple or None: return a tuple of the flip indices (str) and the signed value of
+            dEQCC/dtau (float) if at least two flip indices were found. Otherwise return None.
+    """
+
+    coef, pure_params = qham_qmf_data
+    idxs, gen_tup, idxs_deriv = "", tuple(), None
+    for pauli_factor in qham_term:
+        # The indices of X and Y operators are flip indices
+        idx, pauli_op = pauli_factor
+        if "X" in pauli_op:
+            gen = (idx, "X") if idxs != "" else (idx, "Y")
+            idxs = idxs + f" {idx}" if idxs != "" else f"{idx}"
+            gen_tup += (gen, )
+        if "Y" in pauli_op:
+            gen = (idx, "Y") if idxs != "" else (idx, "X")
+            idxs = idxs + f" {idx}" if idxs != "" else f"{idx}"
+            gen_tup += (gen, )
+    # Generators must have at least two flip indices
+    if len(gen_tup) > 1:
+        qham_gen_comm = QubitOperator(qham_term, -1j * coef)
+        qham_gen_comm *= QubitOperator(gen_tup, 1.)
+        deriv = get_op_expval(qham_gen_comm, pure_params).real
+        idxs_deriv = (gen_tup, deriv)
+    return idxs_deriv
+
+
 def get_gens_from_idxs(group_idxs):
     """Given the flip indices of a DIS group, create all possible Pauli words made
     from Pauli X and an odd number of Y operators acting on qubits indexed by the

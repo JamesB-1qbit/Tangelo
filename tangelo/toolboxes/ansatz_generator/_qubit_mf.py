@@ -107,7 +107,7 @@ def init_qmf_from_hf(n_spinorbitals, n_electrons, mapping, up_then_down=False, s
 
     # Get thetas from HF vec and arrange Bloch angles so all thetas are first then phis
     thetas = get_vector(n_spinorbitals, n_electrons, mapping, up_then_down, spin)
-    return np.concatenate((np.pi * thetas, np.zeros((len(thetas),), dtype=float)))
+    return np.concatenate((np.pi * np.array(thetas), np.zeros((len(thetas),), dtype=float)))
 
 
 def init_qmf_from_vector(vector, mapping, up_then_down=False):

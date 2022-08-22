@@ -36,6 +36,7 @@ Refs:
 import warnings
 
 import numpy as np
+from tangelo.toolboxes.operators.operators import QubitOperator
 
 from tangelo.toolboxes.qubit_mappings.mapping_transform import get_qubit_number,\
                                                                fermion_to_qubit_mapping
@@ -44,7 +45,7 @@ from tangelo import SecondQuantizedMolecule
 from tangelo.toolboxes.ansatz_generator.ansatz import Ansatz
 from tangelo.toolboxes.ansatz_generator.ansatz_utils import exp_pauliword_to_gates
 from tangelo.toolboxes.ansatz_generator._qubit_mf import init_qmf_from_hf, get_qmf_circuit, purify_qmf_state
-from tangelo.toolboxes.ansatz_generator._qubit_cc import build_qcc_qubit_op, construct_dis
+from tangelo.toolboxes.ansatz_generator._qubit_cc import build_qcc_qubit_op, construct_dis, construct_dis_jkmn
 
 
 class QCC(Ansatz):
@@ -254,7 +255,10 @@ class QCC(Ansatz):
         if not self.dis:
             pure_var_params = purify_qmf_state(self.qmf_var_params, self.n_spinorbitals, self.n_electrons,
                                                self.mapping, self.up_then_down, self.spin)
-            self.dis = construct_dis(self.qubit_ham, pure_var_params, self.deqcc_dtau_thresh)
+            if self.mapping.upper() == "JKMN":
+                self.dis = construct_dis_jkmn(self.qubit_ham, pure_var_params, self.deqcc_dtau_thresh)
+            else:
+                self.dis = construct_dis(self.qubit_ham, pure_var_params, self.deqcc_dtau_thresh)
             if self.max_qcc_gens:
                 self.n_qcc_params = min(len(self.dis), self.max_qcc_gens)
                 del self.dis[self.n_qcc_params:]
